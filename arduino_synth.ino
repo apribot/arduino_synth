@@ -19,7 +19,7 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 #define WAVEFORM_POT 0
 #define ATTACK_POT 2
-#define RELEASE_POT 3
+#define DECAY_POT 3
 #define LP_CUTOFF_POT 4
 #define LP_RESO_POT 5
 #define LFO_SPEED_POT 6
@@ -29,25 +29,27 @@ Oscil <TABLE_SIZE, AUDIO_RATE> aOscil(SQUARE_ANALOGUE512_DATA);
 
 ADSR <CONTROL_RATE, AUDIO_RATE> envelope;
 
-boolean note_is_on = true;
+boolean note_is_on = false;
+
+byte note;
 
 /*
 * Paramethers of note
 */
 //Intensity of phase
 byte attack_level = 255;
-byte decay_level = 210;
+byte decay_level = 0;
 
 //Duration of each phase
-unsigned int attack=10;
+unsigned int attack=50;
 unsigned int decay=10;
-unsigned int sustain=40000;
-unsigned int release_ms=393;
+unsigned int sustain=20;
+unsigned int release_ms=20;
 
 enum Potentiometers {
   WaveFormPot,
   AttackPot,
-  ReleasePot,
+  DecayPot,
   LPFCutoffPot,
   LPFResonancePot,
   LFOSpeedPot,
@@ -61,7 +63,7 @@ uint16_t pots[POTENTIOMETER_COUNT];
 boolean no_nota=true;
 EventDelay noteDelay;
 
-const int8_t *potValueToWaveTable (unsinotenotegned int value) {
+const int8_t *potValueToWaveTable (unsigned int value) {
   for (uint8_t i = 0; i < NUM_TABLES-1; ++i) {
     if (value <= (1024 / NUM_TABLES)) return (WAVE_TABLES[i]);
     value -= (1024 / NUM_TABLES);
@@ -72,7 +74,7 @@ const int8_t *potValueToWaveTable (unsinotenotegned int value) {
 void readPots() {
   pots[WaveFormPot] = mozziAnalogRead(WAVEFORM_POT);
   pots[AttackPot] = mozziAnalogRead(ATTACK_POT);
-  pots[ReleasePot] = mozziAnalogRead(RELEASE_POT);
+  pots[DecayPot] = mozziAnalogRead(DECAY_POT);
   pots[LPFCutoffPot] = mozziAnalogRead(LP_CUTOFF_POT);
   pots[LPFResonancePot] = mozziAnalogRead(LP_RESO_POT);
   pots[LFOSpeedPot] = mozziAnalogRead(LFO_SPEED_POT);
@@ -81,20 +83,35 @@ void readPots() {
 
 void handleNoteOn(byte channel, byte pitch, byte velocity)
 {
+
     aOscil.setTable(potValueToWaveTable(pots[WaveFormPot]));
 
+    envelope.setTimes(
+      pots[AttackPot]+50,
+      (pots[DecayPot] * 5) + 20,
+      sustain,
+      release_ms);   
+
+
     aOscil.setFreq((int)mtof(pitch));
+    note_is_on = true;
+    
     envelope.noteOn();
     envelope.update();
     digitalWrite(13, HIGH);   // turn the LED on (HIGH is the voltage level)   
+    note = pitch;
 }
 
 void handleNoteOff(byte channel, byte pitch, byte velocity)
 {
     digitalWrite(13, LOW);   // turn the LED off
 
-    envelope.noteOff();
-    noteDelay.start(release_ms+50);
+    
+    if(note == pitch) {
+      envelope.noteOff();  
+      noteDelay.start(release_ms+50);
+      note_is_on = false;
+    }
 }
 
 void setup(){
@@ -102,7 +119,7 @@ void setup(){
 
     readPots();
 
-    envelope.setADLevels(attack_level,decay_level);
+    envelope.setLevels(attack_level,decay_level, 0, 0);
  
     // generate a random new adsr time parameter value in milliseconds
     envelope.setTimes(attack,decay,sustain,release_ms);   
@@ -122,7 +139,7 @@ void setup(){
 
 
 void updateControl(){      
-    if(noteDelay.ready())
+    if(noteDelay.ready() && note_is_on == false)
       no_nota=true;
     else
       no_nota=false;
@@ -136,7 +153,7 @@ int updateAudio(){
     if(no_nota)
       return 0;
     else {
-      return ((long)envelope.next() * aOscil.next())>>8;
+      return ((long) envelope.next() * aOscil.next())>>8;
     }
 }
 
