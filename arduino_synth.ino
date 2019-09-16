@@ -1,3 +1,10 @@
+/* TODO:
+ * don't care about lfo
+ * change pins/pots to be full ADSR maybe?
+ * A        D      S       R
+ * waveform cutoff reso
+ */
+
 #include <MozziGuts.h>
 #include <Oscil.h>
 #include <EventDelay.h>
