@@ -1,5 +1,5 @@
 /* TODO:
-    idk
+    filter/reso
  */
 
 #include <MozziGuts.h>
