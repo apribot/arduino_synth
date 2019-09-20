@@ -9,6 +9,7 @@
 #include <mozzi_rand.h>
 #include <mozzi_midi.h>
 #include <MIDI.h>
+#include <IntMap.h>
 
 #include <tables/sin512_int8.h>
 #include <tables/saw_analogue512_int8.h>
@@ -39,12 +40,13 @@ Oscil <TABLE_SIZE, AUDIO_RATE> aOscil(SQUARE_ANALOGUE512_DATA);
 ADSR <CONTROL_RATE, AUDIO_RATE> envelope;
 
 boolean note_is_on = false;
+byte j = 1;           //a counter.
 
 byte note;
 
 //Intensity of phase
 byte attack_level = 255;
-byte decay_level = 0;
+byte decay_level = 255;
 
 //Duration of each phase
 unsigned int sustain=30000; // arbitrarily long, idk
@@ -67,6 +69,11 @@ uint16_t pots[POTENTIOMETER_COUNT];
 boolean no_note=true;
 EventDelay noteDelay;
 
+const IntMap attackIntMap(0,1024,28,2500);    // Min value must be large enough to prevent click at note start.
+const IntMap decayIntMap(0,1024,28,3000);    // Min value must be large enough to prevent click at note start.
+const IntMap sustainIntMap(0,1024,0,255);    // Min value must be large enough to prevent click at note start.
+const IntMap releaseIntMap(0,1024,25,3000);   // Min value must be large enough to prevent click at note end.
+
 const int8_t *potValueToWaveTable (unsigned int value) {
   for (uint8_t i = 0; i < NUM_TABLES-1; ++i) {
     if (value <= (1024 / NUM_TABLES)) return (WAVE_TABLES[i]);
@@ -75,36 +82,40 @@ const int8_t *potValueToWaveTable (unsigned int value) {
   return WAVE_TABLES[NUM_TABLES-1];
 }
 
-void readPots() {
-  pots[WaveFormPot] = mozziAnalogRead(WAVEFORM_POT);
-  pots[AttackPot] = mozziAnalogRead(ATTACK_POT);
-  pots[DecayPot] = mozziAnalogRead(DECAY_POT);
-  pots[SustainPot] = mozziAnalogRead(SUSTAIN_POT);
-  pots[ReleasePot] = mozziAnalogRead(RELEASE_POT);  
-  pots[LPFCutoffPot] = mozziAnalogRead(LP_CUTOFF_POT);
-  pots[LPFResonancePot] = mozziAnalogRead(LP_RESO_POT);
-}
 
 void grabSettings() {
-    aOscil.setTable(potValueToWaveTable(pots[WaveFormPot]));
 
-    envelope.setLevels(
-      attack_level,
-      decay_level, 
-      pots[SustainPot] >> 2, 
-      0
-    );
+  switch (j){
+    case 1:
+      pots[WaveFormPot] = mozziAnalogRead(WAVEFORM_POT);
+      aOscil.setTable(potValueToWaveTable(pots[WaveFormPot]));
+      break;
+    case 2:
+      pots[AttackPot] = attackIntMap(mozziAnalogRead(ATTACK_POT));    // pot 3
+      envelope.setAttackTime(pots[AttackPot]);
+    break;
+    case 3:
+      pots[DecayPot] = decayIntMap(mozziAnalogRead(DECAY_POT));    // Pot 4
+      envelope.setDecayTime(pots[DecayPot]); 
+    break;
+    case 4:
+      pots[SustainPot] = sustainIntMap(mozziAnalogRead(SUSTAIN_POT));    // Pot 4
+      envelope.setSustainLevel(pots[SustainPot]); 
+    break;
+    case 5:
+      pots[ReleasePot] = releaseIntMap(mozziAnalogRead(RELEASE_POT));    // Pot 4
+      envelope.setReleaseTime(pots[ReleasePot]); 
+    break;
 
-    envelope.setTimes(
-      ((pots[AttackPot] * pots[AttackPot]) >> 7) + 50, // exponential from 50ms to 8.242s
-      ((pots[DecayPot]  * pots[DecayPot])  >> 7) + 20, // exponential from 20ms to 8.212s
-      sustain,
-      pots[ReleasePot] * 5
-    );   
+  }
+  j++;
+  if(j>5){
+    j=0;
+  }         // This index steps us through the above seven pot reads, one per control update.
+  envelope.update(); //idk if this is needed
 }
 
 void handleNoteOn(byte channel, byte pitch, byte velocity) {
-    grabSettings();
     note_is_on = true;
     aOscil.setFreq((int)mtof(pitch));
     envelope.noteOn();
@@ -126,9 +137,10 @@ void handleNoteOff(byte channel, byte pitch, byte velocity) {
 void setup() {
     pinMode(13, OUTPUT);     
 
-    readPots();
-
-    grabSettings();
+    envelope.setADLevels(250,250);               // Sets Attack and Decay Levels; assumes Sustain, Decay, and Idle times
+    envelope.setDecayTime(100);                  // Sets Decay time in milliseconds
+    envelope.setSustainTime(32500);              // Sustain Time setting for envelope1 
+  
     byte midi_note = 1;
     aOscil.setFreq((int)mtof(midi_note));
   
@@ -149,9 +161,8 @@ void updateControl() {
     else
       no_note=false;
   
-    readPots();
-  
-    envelope.update(); //idk if this is needed
+    grabSettings();
+    MIDI.read();
 } 
 
 int updateAudio() {
@@ -163,6 +174,5 @@ int updateAudio() {
 }
 
 void loop() {
-    MIDI.read();
     audioHook();     
 }
