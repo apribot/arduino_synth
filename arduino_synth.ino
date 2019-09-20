@@ -10,13 +10,14 @@
 #include <mozzi_midi.h>
 #include <MIDI.h>
 #include <IntMap.h>
+#include <LowPassFilter.h>
 
 #include <tables/sin512_int8.h>
-#include <tables/saw_analogue512_int8.h>
+#include <tables/saw512_int8.h>
 #include <tables/triangle512_int8.h>
-#include <tables/square_analogue512_int8.h>
+#include <tables/square_no_alias512_int8.h>
 #define NUM_TABLES 4
-const int8_t *WAVE_TABLES[NUM_TABLES] = {SQUARE_ANALOGUE512_DATA, SIN512_DATA, SAW_ANALOGUE512_DATA, TRIANGLE512_DATA};
+const int8_t *WAVE_TABLES[NUM_TABLES] = {SQUARE_NO_ALIAS512_DATA, SIN512_DATA, SAW512_DATA, TRIANGLE512_DATA};
 #define TABLE_SIZE 512
 
 MIDI_CREATE_DEFAULT_INSTANCE();
@@ -28,14 +29,15 @@ MIDI_CREATE_DEFAULT_INSTANCE();
  *  0 2 3
  */
 #define ATTACK_POT 4
-#define DECAY_POT 5
-#define SUSTAIN_POT 6
-#define RELEASE_POT 7
+//#define DECAY_POT 5
+//#define SUSTAIN_POT 6
+#define RELEASE_POT 5
 #define WAVEFORM_POT 0
-#define LP_RESO_POT 2
-#define LP_CUTOFF_POT 3
+#define LP_CUTOFF_POT 2
+#define LP_RESO_POT 3
 
-Oscil <TABLE_SIZE, AUDIO_RATE> aOscil(SQUARE_ANALOGUE512_DATA);
+Oscil <TABLE_SIZE, AUDIO_RATE> aOscil(SQUARE_NO_ALIAS512_DATA);
+LowPassFilter lpf;       
 
 ADSR <CONTROL_RATE, AUDIO_RATE> envelope;
 
@@ -58,8 +60,8 @@ enum Potentiometers {
   DecayPot,
   SustainPot,
   ReleasePot,
-  LPFCutoffPot,
   LPFResonancePot,
+  LPFCutoffPot,
   POTENTIOMETER_COUNT
 };
 
@@ -69,10 +71,13 @@ uint16_t pots[POTENTIOMETER_COUNT];
 boolean no_note=true;
 EventDelay noteDelay;
 
-const IntMap attackIntMap(0,1024,28,2500);    // Min value must be large enough to prevent click at note start.
+const IntMap attackIntMap(0,1024,20,2500);    // Min value must be large enough to prevent click at note start.
 const IntMap decayIntMap(0,1024,28,3000);    // Min value must be large enough to prevent click at note start.
 const IntMap sustainIntMap(0,1024,0,255);    // Min value must be large enough to prevent click at note start.
 const IntMap releaseIntMap(0,1024,25,3000);   // Min value must be large enough to prevent click at note end.
+const IntMap cutoffIntMap(0, 1024, 30, 255);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
+const IntMap resonanceIntMap(0, 1024, 0, 255);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
+
 
 const int8_t *potValueToWaveTable (unsigned int value) {
   for (uint8_t i = 0; i < NUM_TABLES-1; ++i) {
@@ -94,24 +99,32 @@ void grabSettings() {
       pots[AttackPot] = attackIntMap(mozziAnalogRead(ATTACK_POT));    // pot 3
       envelope.setAttackTime(pots[AttackPot]);
     break;
+    //case 3:
+    //  pots[DecayPot] = decayIntMap(mozziAnalogRead(DECAY_POT));    // Pot 4
+    //  envelope.setDecayTime(pots[DecayPot]); 
+    //break;
+    //case 4:
+    //  pots[SustainPot] = sustainIntMap(mozziAnalogRead(SUSTAIN_POT));    // Pot 4
+    //  envelope.setSustainLevel(pots[SustainPot]); 
+    //break;
     case 3:
-      pots[DecayPot] = decayIntMap(mozziAnalogRead(DECAY_POT));    // Pot 4
-      envelope.setDecayTime(pots[DecayPot]); 
-    break;
-    case 4:
-      pots[SustainPot] = sustainIntMap(mozziAnalogRead(SUSTAIN_POT));    // Pot 4
-      envelope.setSustainLevel(pots[SustainPot]); 
-    break;
-    case 5:
       pots[ReleasePot] = releaseIntMap(mozziAnalogRead(RELEASE_POT));    // Pot 4
       envelope.setReleaseTime(pots[ReleasePot]); 
     break;
 
   }
   j++;
-  if(j>5){
+  if(j>3){
     j=0;
   }         // This index steps us through the above seven pot reads, one per control update.
+
+
+  pots[LPFCutoffPot] = cutoffIntMap(mozziAnalogRead(LP_CUTOFF_POT));             // Pot 7
+  lpf.setCutoffFreq(pots[LPFCutoffPot]);
+  pots[LPFResonancePot] = resonanceIntMap(mozziAnalogRead(LP_RESO_POT));             // Pot 7
+  lpf.setResonance(pots[LPFResonancePot]);
+
+
   envelope.update(); //idk if this is needed
 }
 
@@ -129,7 +142,7 @@ void handleNoteOff(byte channel, byte pitch, byte velocity) {
 
     if(note == pitch) {
       envelope.noteOff();  
-      noteDelay.start((pots[ReleasePot] * 5)+50);
+      noteDelay.start(pots[ReleasePot]);
       note_is_on = false;
     }
 }
@@ -143,7 +156,8 @@ void setup() {
   
     byte midi_note = 1;
     aOscil.setFreq((int)mtof(midi_note));
-  
+    lpf.setResonance(220);
+
     startMozzi(CONTROL_RATE);
     MIDI.setHandleNoteOn(handleNoteOn);
 
@@ -169,7 +183,7 @@ int updateAudio() {
     if(no_note)
       return 0;
     else {
-      return ((long) envelope.next() * aOscil.next())>>8;
+      return ((long) envelope.next() * lpf.next(aOscil.next() >>1))>>8;
     }
 }
 
