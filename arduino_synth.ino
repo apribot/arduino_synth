@@ -21,7 +21,7 @@ const int8_t *WAVE_TABLES[NUM_TABLES] = {SQUARE_NO_ALIAS512_DATA, SIN512_DATA, S
 #define TABLE_SIZE 512
 
 MIDI_CREATE_DEFAULT_INSTANCE();
-#define CONTROL_RATE 64
+#define CONTROL_RATE 128
 
 /*
  *  current pot to input mapping
@@ -29,14 +29,17 @@ MIDI_CREATE_DEFAULT_INSTANCE();
  *  0 2 3
  */
 #define ATTACK_POT 4
-//#define DECAY_POT 5
-//#define SUSTAIN_POT 6
 #define RELEASE_POT 5
+
+#define WAVEFORM2_POT 6
+#define WAVEFORM2_DETUNE_POT 7
 #define WAVEFORM_POT 0
 #define LP_CUTOFF_POT 2
 #define LP_RESO_POT 3
 
 Oscil <TABLE_SIZE, AUDIO_RATE> aOscil(SQUARE_NO_ALIAS512_DATA);
+Oscil <TABLE_SIZE, AUDIO_RATE> bOscil(SQUARE_NO_ALIAS512_DATA);
+
 LowPassFilter lpf;       
 
 ADSR <CONTROL_RATE, AUDIO_RATE> envelope;
@@ -57,27 +60,27 @@ unsigned int sustain=30000; // arbitrarily long, idk
 enum Potentiometers {
   WaveFormPot,
   AttackPot,
-  DecayPot,
-  SustainPot,
   ReleasePot,
   LPFResonancePot,
   LPFCutoffPot,
+  WaveForm2Pot,
+  WaveForm2DetunePot,
   POTENTIOMETER_COUNT
 };
 
-uint16_t pots[POTENTIOMETER_COUNT];
+int16_t pots[POTENTIOMETER_COUNT];
 
 //Used to mute output if no notes are being played.
 boolean no_note=true;
 EventDelay noteDelay;
 
-const IntMap attackIntMap(0,1024,20,2500);    // Min value must be large enough to prevent click at note start.
+const IntMap attackIntMap(0,1024,0,2500);    // Min value must be large enough to prevent click at note start.
 const IntMap decayIntMap(0,1024,28,3000);    // Min value must be large enough to prevent click at note start.
 const IntMap sustainIntMap(0,1024,0,255);    // Min value must be large enough to prevent click at note start.
 const IntMap releaseIntMap(0,1024,25,3000);   // Min value must be large enough to prevent click at note end.
 const IntMap cutoffIntMap(0, 1024, 30, 255);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
 const IntMap resonanceIntMap(0, 1024, 0, 255);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
-
+const IntMap detuneIntMap(0, 1024, -12, 12);
 
 const int8_t *potValueToWaveTable (unsigned int value) {
   for (uint8_t i = 0; i < NUM_TABLES-1; ++i) {
@@ -99,22 +102,21 @@ void grabSettings() {
       pots[AttackPot] = attackIntMap(mozziAnalogRead(ATTACK_POT));    // pot 3
       envelope.setAttackTime(pots[AttackPot]);
     break;
-    //case 3:
-    //  pots[DecayPot] = decayIntMap(mozziAnalogRead(DECAY_POT));    // Pot 4
-    //  envelope.setDecayTime(pots[DecayPot]); 
-    //break;
-    //case 4:
-    //  pots[SustainPot] = sustainIntMap(mozziAnalogRead(SUSTAIN_POT));    // Pot 4
-    //  envelope.setSustainLevel(pots[SustainPot]); 
-    //break;
     case 3:
+      pots[WaveForm2Pot] = mozziAnalogRead(WAVEFORM2_POT);
+      bOscil.setTable(potValueToWaveTable(pots[WaveForm2Pot]));
+    break;
+    case 4:
+      pots[WaveForm2DetunePot] = detuneIntMap(mozziAnalogRead(WAVEFORM2_DETUNE_POT));    // Pot 4
+    break;
+    case 5:
       pots[ReleasePot] = releaseIntMap(mozziAnalogRead(RELEASE_POT));    // Pot 4
       envelope.setReleaseTime(pots[ReleasePot]); 
     break;
 
   }
   j++;
-  if(j>3){
+  if(j>5){
     j=0;
   }         // This index steps us through the above seven pot reads, one per control update.
 
@@ -131,6 +133,11 @@ void grabSettings() {
 void handleNoteOn(byte channel, byte pitch, byte velocity) {
     note_is_on = true;
     aOscil.setFreq((int)mtof(pitch));
+
+    int subosc = (int) pitch + pots[WaveForm2DetunePot];
+
+    bOscil.setFreq((int)mtof((byte) subosc));
+
     envelope.noteOn();
     envelope.update();
     digitalWrite(13, HIGH);   // turn the LED on (HIGH is the voltage level)   
@@ -156,6 +163,8 @@ void setup() {
   
     byte midi_note = 1;
     aOscil.setFreq((int)mtof(midi_note));
+    bOscil.setFreq((int)mtof(midi_note));
+
     lpf.setResonance(220);
 
     startMozzi(CONTROL_RATE);
@@ -183,7 +192,7 @@ int updateAudio() {
     if(no_note)
       return 0;
     else {
-      return ((long) envelope.next() * lpf.next(aOscil.next() >>1))>>8;
+      return ((long) envelope.next() * lpf.next( (aOscil.next() >>1) + (bOscil.next() >> 1) ) )>>9;
     }
 }
 
