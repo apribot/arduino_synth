@@ -21,7 +21,7 @@ const int8_t *WAVE_TABLES[NUM_TABLES] = {SQUARE_NO_ALIAS512_DATA, SIN512_DATA, S
 #define TABLE_SIZE 512
 
 MIDI_CREATE_DEFAULT_INSTANCE();
-#define CONTROL_RATE 64
+#define CONTROL_RATE 256
 
 /*
  *  current pot to input mapping
@@ -72,6 +72,7 @@ int16_t pots[POTENTIOMETER_COUNT];
 
 //Used to mute output if no notes are being played.
 boolean no_note=true;
+int subosc = 0;
 EventDelay noteDelay;
 
 const IntMap attackIntMap(0,1024,0,2500);    // Min value must be large enough to prevent click at note start.
@@ -79,8 +80,8 @@ const IntMap decayIntMap(0,1024,28,3000);    // Min value must be large enough t
 const IntMap sustainIntMap(0,1024,0,255);    // Min value must be large enough to prevent click at note start.
 const IntMap releaseIntMap(0,1024,25,3000);   // Min value must be large enough to prevent click at note end.
 const IntMap cutoffIntMap(0, 1024, 30, 255);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
-const IntMap resonanceIntMap(0, 1024, 0, 255);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
-const IntMap detuneIntMap(0, 1024, -12, 12);
+const IntMap resonanceIntMap(0, 1024, 20, 230);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
+const IntMap detuneIntMap(0, 1024, -12, 13); // pot is bad, cant always reach max
 
 const int8_t *potValueToWaveTable (unsigned int value) {
   for (uint8_t i = 0; i < NUM_TABLES-1; ++i) {
@@ -113,18 +114,21 @@ void grabSettings() {
       pots[ReleasePot] = releaseIntMap(mozziAnalogRead(RELEASE_POT));    // Pot 4
       envelope.setReleaseTime(pots[ReleasePot]); 
     break;
-
+    case 7:    
+      pots[LPFCutoffPot] = cutoffIntMap(mozziAnalogRead(LP_CUTOFF_POT));             // Pot 7
+      lpf.setCutoffFreq(pots[LPFCutoffPot]);
+    break;
+    case 8:  
+      pots[LPFResonancePot] = resonanceIntMap(mozziAnalogRead(LP_RESO_POT));             // Pot 7
+      lpf.setResonance(pots[LPFResonancePot]);
+    break;
   }
   j++;
-  if(j>5){
+  if(j>8){
     j=0;
   }         // This index steps us through the above seven pot reads, one per control update.
 
 
-  pots[LPFCutoffPot] = cutoffIntMap(mozziAnalogRead(LP_CUTOFF_POT));             // Pot 7
-  lpf.setCutoffFreq(pots[LPFCutoffPot]);
-  pots[LPFResonancePot] = resonanceIntMap(mozziAnalogRead(LP_RESO_POT));             // Pot 7
-  lpf.setResonance(pots[LPFResonancePot]);
 
 
   envelope.update(); //idk if this is needed
@@ -134,7 +138,7 @@ void handleNoteOn(byte channel, byte pitch, byte velocity) {
     note_is_on = true;
     aOscil.setFreq((int)mtof(pitch));
 
-    int subosc = (int) pitch + pots[WaveForm2DetunePot];
+    subosc = (int) pitch + pots[WaveForm2DetunePot];
 
     bOscil.setFreq((int)mtof((byte) subosc));
 
