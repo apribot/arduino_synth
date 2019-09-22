@@ -21,7 +21,7 @@ const int8_t *WAVE_TABLES[NUM_TABLES] = {SQUARE_NO_ALIAS512_DATA, SIN512_DATA, S
 #define TABLE_SIZE 512
 
 MIDI_CREATE_DEFAULT_INSTANCE();
-#define CONTROL_RATE 128
+#define CONTROL_RATE 64
 
 /*
  *  current pot to input mapping
