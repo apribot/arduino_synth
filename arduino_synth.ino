@@ -21,7 +21,7 @@ const int8_t *WAVE_TABLES[NUM_TABLES] = {SQUARE_NO_ALIAS512_DATA, SIN512_DATA, S
 #define TABLE_SIZE 512
 
 MIDI_CREATE_DEFAULT_INSTANCE();
-#define CONTROL_RATE 256
+#define CONTROL_RATE 64
 
 /*
  *  current pot to input mapping
@@ -79,7 +79,7 @@ const IntMap attackIntMap(0,1024,0,2500);    // Min value must be large enough t
 const IntMap decayIntMap(0,1024,28,3000);    // Min value must be large enough to prevent click at note start.
 const IntMap sustainIntMap(0,1024,0,255);    // Min value must be large enough to prevent click at note start.
 const IntMap releaseIntMap(0,1024,25,3000);   // Min value must be large enough to prevent click at note end.
-const IntMap cutoffIntMap(0, 1024, 30, 255);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
+const IntMap cutoffIntMap(0, 1024, 20, 240);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
 const IntMap resonanceIntMap(0, 1024, 20, 230);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
 const IntMap detuneIntMap(0, 1024, -12, 13); // pot is bad, cant always reach max
 
@@ -92,47 +92,6 @@ const int8_t *potValueToWaveTable (unsigned int value) {
 }
 
 
-void grabSettings() {
-
-  switch (j){
-    case 1:
-      pots[WaveFormPot] = mozziAnalogRead(WAVEFORM_POT);
-      aOscil.setTable(potValueToWaveTable(pots[WaveFormPot]));
-      break;
-    case 2:
-      pots[AttackPot] = attackIntMap(mozziAnalogRead(ATTACK_POT));    // pot 3
-      envelope.setAttackTime(pots[AttackPot]);
-    break;
-    case 3:
-      pots[WaveForm2Pot] = mozziAnalogRead(WAVEFORM2_POT);
-      bOscil.setTable(potValueToWaveTable(pots[WaveForm2Pot]));
-    break;
-    case 4:
-      pots[WaveForm2DetunePot] = detuneIntMap(mozziAnalogRead(WAVEFORM2_DETUNE_POT));    // Pot 4
-    break;
-    case 5:
-      pots[ReleasePot] = releaseIntMap(mozziAnalogRead(RELEASE_POT));    // Pot 4
-      envelope.setReleaseTime(pots[ReleasePot]); 
-    break;
-    case 7:    
-      pots[LPFCutoffPot] = cutoffIntMap(mozziAnalogRead(LP_CUTOFF_POT));             // Pot 7
-      lpf.setCutoffFreq(pots[LPFCutoffPot]);
-    break;
-    case 8:  
-      pots[LPFResonancePot] = resonanceIntMap(mozziAnalogRead(LP_RESO_POT));             // Pot 7
-      lpf.setResonance(pots[LPFResonancePot]);
-    break;
-  }
-  j++;
-  if(j>8){
-    j=0;
-  }         // This index steps us through the above seven pot reads, one per control update.
-
-
-
-
-  envelope.update(); //idk if this is needed
-}
 
 void handleNoteOn(byte channel, byte pitch, byte velocity) {
     note_is_on = true;
@@ -188,7 +147,42 @@ void updateControl() {
     else
       no_note=false;
   
-    grabSettings();
+    switch (j){
+      case 1:
+        pots[WaveFormPot] = mozziAnalogRead(WAVEFORM_POT);
+        aOscil.setTable(potValueToWaveTable(pots[WaveFormPot]));
+        break;
+      case 2:
+        pots[AttackPot] = attackIntMap(mozziAnalogRead(ATTACK_POT));    // pot 3
+        envelope.setAttackTime(pots[AttackPot]);
+      break;
+      case 3:
+        pots[WaveForm2Pot] = mozziAnalogRead(WAVEFORM2_POT);
+        bOscil.setTable(potValueToWaveTable(pots[WaveForm2Pot]));
+      break;
+      case 4:
+        pots[WaveForm2DetunePot] = detuneIntMap(mozziAnalogRead(WAVEFORM2_DETUNE_POT));    // Pot 4
+      break;
+      case 5:
+        pots[ReleasePot] = releaseIntMap(mozziAnalogRead(RELEASE_POT));    // Pot 4
+        envelope.setReleaseTime(pots[ReleasePot]); 
+      break;
+      case 7:    
+        pots[LPFCutoffPot] = cutoffIntMap(mozziAnalogRead(LP_CUTOFF_POT));             // Pot 7
+        lpf.setCutoffFreq(pots[LPFCutoffPot]);
+      break;
+      case 8:
+        pots[LPFResonancePot] = resonanceIntMap(mozziAnalogRead(LP_RESO_POT));             // Pot 7
+        lpf.setResonance(pots[LPFResonancePot]);
+      break;
+    }
+    j++;
+    if(j>8){
+      j=0;
+    }         // This index steps us through the above seven pot reads, one per control update.
+  
+    envelope.update(); //idk if this is needed
+
     MIDI.read();
 } 
 
@@ -196,7 +190,7 @@ int updateAudio() {
     if(no_note)
       return 0;
     else {
-      return ((long) envelope.next() * lpf.next( (aOscil.next() >>1) + (bOscil.next() >> 1) ) )>>9;
+      return ((long) envelope.next() * lpf.next( (aOscil.next() + bOscil.next())>>1 ) )>>9;
     }
 }
 
