@@ -21,7 +21,7 @@ const int8_t *WAVE_TABLES[NUM_TABLES] = {SQUARE_NO_ALIAS512_DATA, SIN512_DATA, S
 #define TABLE_SIZE 512
 
 MIDI_CREATE_DEFAULT_INSTANCE();
-#define CONTROL_RATE 64
+#define CONTROL_RATE 128
 
 /*
  *  current pot to input mapping
@@ -42,11 +42,11 @@ Oscil <TABLE_SIZE, AUDIO_RATE> bOscil(SQUARE_NO_ALIAS512_DATA);
 
 LowPassFilter lpf;       
 
-ADSR <CONTROL_RATE, AUDIO_RATE> envelope;
+ADSR <CONTROL_RATE, CONTROL_RATE> envelope;
 
 boolean note_is_on = false;
 byte j = 1;           //a counter.
-
+byte gain;
 byte note;
 
 //Intensity of phase
@@ -79,9 +79,9 @@ const IntMap attackIntMap(0,1024,0,2500);    // Min value must be large enough t
 const IntMap decayIntMap(0,1024,28,3000);    // Min value must be large enough to prevent click at note start.
 const IntMap sustainIntMap(0,1024,0,255);    // Min value must be large enough to prevent click at note start.
 const IntMap releaseIntMap(0,1024,25,3000);   // Min value must be large enough to prevent click at note end.
-const IntMap cutoffIntMap(0, 1024, 20, 240);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
-const IntMap resonanceIntMap(0, 1024, 20, 230);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
-const IntMap detuneIntMap(0, 1024, -12, 13); // pot is bad, cant always reach max
+const IntMap cutoffIntMap(0, 1024, 30, 180);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
+const IntMap resonanceIntMap(0, 1024, 20, 220);  // Valid range 0-255 corresponds to freq 0-8192 (audio rate/2).
+const IntMap detuneIntMap(0, 1024, -12, 12); // pot is bad, cant always reach max
 
 const int8_t *potValueToWaveTable (unsigned int value) {
   for (uint8_t i = 0; i < NUM_TABLES-1; ++i) {
@@ -182,7 +182,7 @@ void updateControl() {
     }         // This index steps us through the above seven pot reads, one per control update.
   
     envelope.update(); //idk if this is needed
-
+    gain = envelope.next();
     MIDI.read();
 } 
 
@@ -190,7 +190,7 @@ int updateAudio() {
     if(no_note)
       return 0;
     else {
-      return ((long) envelope.next() * lpf.next( (aOscil.next() + bOscil.next())>>1 ) )>>9;
+      return ((long) gain * lpf.next( (aOscil.next() + bOscil.next())>>1 ) )>>9;
     }
 }
 
